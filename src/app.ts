@@ -18,16 +18,35 @@ const state: AppState = {
 
 const appEl = document.querySelector<HTMLDivElement>('#app')!;
 
-/* ── progress bar ── */
-const progressBar = document.createElement('div');
-progressBar.className = 'progress-bar';
-document.body.appendChild(progressBar);
+/* ── dot progress (shared across question screens) ── */
+const dotProgress = document.createElement('div');
+dotProgress.className = 'dot-progress';
+document.body.appendChild(dotProgress);
 
-/* ── helpers ── */
+function renderDots(): void {
+  const dots = Array.from({ length: questions.length }, (_, i) => {
+    let cls = 'dot-progress__dot';
+    if (i < state.questionIndex) cls += ' done';
+    if (i === state.questionIndex) cls += ' current';
+    return `<span class="${cls}"></span>`;
+  }).join('');
+  dotProgress.innerHTML = dots;
+}
+
+/* ── screen management ── */
 function showScreen(name: ScreenName): void {
   state.screen = name;
+
+  /* manage dot progress */
+  if (name === 'question') {
+    dotProgress.classList.add('visible');
+    renderDots();
+  } else {
+    dotProgress.classList.remove('visible');
+  }
+
   const container = document.createElement('div');
-  container.className = `screen ${name}`;
+  container.className = `screen`;
 
   switch (name) {
     case 'welcome':
@@ -52,11 +71,11 @@ function showScreen(name: ScreenName): void {
         resetState();
         showScreen('welcome');
       });
-      setTimeout(() => animateResultBars(container), 200);
+      setTimeout(() => animateResults(container), 300);
       break;
   }
 
-  /* fade transition */
+  /* crossfade transition */
   const current = appEl.querySelector('.screen.active');
   if (current) {
     current.classList.remove('active');
@@ -76,39 +95,34 @@ function resetState(): void {
   state.score = { ru: 0, shi: 0, dao: 0 };
 }
 
-function updateProgress(): void {
-  const pct = ((state.questionIndex) / questions.length) * 100;
-  progressBar.style.width = `${pct}%`;
-}
+/* ═══════════════════════════════════════
+   SCREEN BUILDERS
+   ═══════════════════════════════════════ */
 
-/* ── screen builders ── */
 function buildWelcome(): string {
   return `
-    <div class="welcome__divider fade-up delay-1"></div>
-    <h1 class="welcome__title fade-up delay-2">你是哪一家</h1>
-    <div class="welcome__divider fade-up delay-1"></div>
-    <p class="welcome__description fade-up delay-3">
-      通过十五道情境选择，<br>探寻你内心深处的儒·释·道倾向
+    <div class="welcome__circle in d1"></div>
+    <div class="welcome__traditions in d2">儒 · 释 · 道</div>
+    <h1 class="welcome__title in d3">你是哪一家</h1>
+    <p class="welcome__description in d4">
+      十五道情境选择，探寻你内心的哲学倾向。没有正确答案——只有最像你的那一个。
     </p>
-    <button class="welcome__btn fade-up delay-4">开始探索</button>
+    <button class="welcome__btn in d5">开始探索</button>
   `;
 }
 
 function buildQuestion(): string {
   const q = questions[state.questionIndex];
-  const step = `${state.questionIndex + 1} / ${questions.length}`;
-  const letters = ['A', 'B', 'C'];
 
-  const choices = q.choices.map((c, i) => `
+  const choices = q.choices.map((c) => `
     <button class="choice-card" data-tradition="${c.tradition}">
-      <span class="choice-card__letter">${letters[i]}</span>
-      <span class="choice-card__text">${c.text}</span>
+      <span>${c.text}</span>
     </button>
   `).join('');
 
   return `
-    <span class="question-screen__step fade-up">${step}</span>
-    <p class="question-screen__scenario fade-up delay-1">${q.scenario}</p>
+    <span class="question-screen__step in">${state.questionIndex + 1} / ${questions.length}</span>
+    <p class="question-screen__scenario in d1">${q.scenario}</p>
     <div class="question-screen__choices">
       ${choices}
     </div>
@@ -119,58 +133,76 @@ function handleChoice(card: Element): void {
   const tradition = card.getAttribute('data-tradition') as 'ru' | 'shi' | 'dao';
   if (!tradition) return;
 
+  /* disable further clicks */
+  document.querySelectorAll<HTMLElement>('.choice-card').forEach((c) => {
+    c.style.pointerEvents = 'none';
+  });
+
   trackAnswer(tradition, state.score);
   card.classList.add('selected');
 
   setTimeout(() => {
     state.questionIndex++;
-    updateProgress();
     if (state.questionIndex >= questions.length) {
       showScreen('results');
     } else {
       showScreen('question');
     }
-  }, 250);
+  }, 350);
 }
 
 function buildResults(): string {
   const dom = getDominant(state.score);
   const pct = getPercentages(state.score);
   const interp = getInterpretation(dom, pct);
-
   const names = { ru: '儒家', shi: '佛家', dao: '道家' };
 
-  const dimensions = (['ru', 'shi', 'dao'] as const).map((key) => {
-    const label = key === dom ? `${names[key]} · 主导` : names[key];
-    return `
-      <div class="dimension dimension--${key} fade-up delay-${key === 'ru' ? '2' : key === 'shi' ? '3' : '4'}" data-pct="${pct[key]}">
-        <div class="dimension__header">
-          <span class="dimension__name">${label}</span>
-          <span class="dimension__value">${pct[key]}%</span>
-        </div>
-        <div class="dimension__track">
-          <div class="dimension__fill" style="width: 0%"></div>
-        </div>
-      </div>
-    `;
-  }).join('');
+  const dimensionItems = (['ru', 'shi', 'dao'] as const).map((key) => `
+    <div class="dimension-item dimension-item--${key} in d${key === 'ru' ? '4' : key === 'shi' ? '5' : '6'}">
+      <span class="dimension-item__name">${names[key]}</span>
+      <span class="dimension-item__track">
+        <span class="dimension-item__fill" style="width: 0%"></span>
+      </span>
+      <span class="dimension-item__value">${pct[key]}%</span>
+    </div>
+  `).join('');
 
   return `
-    <h2 class="results__title fade-up delay-1">你的倾向</h2>
-    <div class="results__dimensions">
-      ${dimensions}
+    <span class="results__label in d1">你的倾向</span>
+    <div class="results__dominant in d2">${names[dom]}</div>
+
+    <!-- venn diagram -->
+    <div class="venn in d3" id="venn">
+      <div class="venn__circle venn__circle--ru"></div>
+      <div class="venn__circle venn__circle--shi"></div>
+      <div class="venn__circle venn__circle--dao"></div>
+      <span class="venn__label venn__label--ru"><span class="venn__pct">${pct.ru}%</span>${names.ru}</span>
+      <span class="venn__label venn__label--shi"><span class="venn__pct">${pct.shi}%</span>${names.shi}</span>
+      <span class="venn__label venn__label--dao"><span class="venn__pct">${pct.dao}%</span>${names.dao}</span>
     </div>
-    <div class="results__interpretation fade-up delay-5">${interp}</div>
-    <button class="results__restart fade-up delay-6">重新探索</button>
+
+    <!-- thin bars -->
+    <div class="dimension-list">
+      ${dimensionItems}
+    </div>
+
+    <div class="results__divider in d6"></div>
+    <div class="results__interpretation in d7">${interp}</div>
+    <button class="results__restart in d8">重新探索</button>
   `;
 }
 
-function animateResultBars(container: HTMLElement): void {
-  container.querySelectorAll<HTMLElement>('.dimension').forEach((dim) => {
-    const pct = dim.getAttribute('data-pct');
-    const fill = dim.querySelector<HTMLElement>('.dimension__fill');
-    if (fill && pct) {
-      fill.style.width = `${pct}%`;
+function animateResults(container: HTMLElement): void {
+  /* venn circles */
+  const venn = container.querySelector<HTMLElement>('.venn');
+  if (venn) venn.classList.add('is-active');
+
+  /* dimension fills */
+  container.querySelectorAll<HTMLElement>('.dimension-item').forEach((item) => {
+    const fill = item.querySelector<HTMLElement>('.dimension-item__fill');
+    if (fill) {
+      const value = item.querySelector<HTMLElement>('.dimension-item__value');
+      if (value) fill.style.width = value.textContent || '0%';
     }
   });
 }
